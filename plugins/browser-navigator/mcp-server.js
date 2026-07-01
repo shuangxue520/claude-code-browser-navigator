@@ -10,7 +10,7 @@ const { spawn } = require("child_process");
 const { pathToFileURL } = require("url");
 
 const SERVER_NAME = "browser_navigator";
-const SERVER_VERSION = "1.1.0";
+const SERVER_VERSION = "1.1.1";
 const ROOT = path.resolve(process.env.BROWSER_NAVIGATOR_ROOT || process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const REF_ATTR = "data-claude-browser-ref";
 const pageRefs = new WeakMap();
@@ -257,8 +257,8 @@ const tools = [
           enum: ["status", "use_profile", "save_storage", "load_storage", "launch_cdp", "connect_cdp", "disconnect"],
           description: "Session action. status is read-only. use_profile launches a persistent Playwright profile. save/load_storage stores cookies/localStorage. launch_cdp starts an isolated Chrome/Edge debug browser then connects. connect_cdp attaches to an existing debug endpoint."
         },
-        browser: { type: "string", enum: ["auto", "edge", "chrome"], description: "Browser family for launch_cdp. Default auto." },
-        browserPath: { type: "string", description: "Advanced: explicit browser executable for launch_cdp." },
+        browser: { type: "string", enum: ["auto", "edge", "chrome"], description: "Browser family for launch_cdp and use_profile. Default auto." },
+        browserPath: { type: "string", description: "Advanced: explicit browser executable for launch_cdp and use_profile." },
         allowCustomBrowserPath: { type: "boolean", description: "Allow browserPath outside known browser locations. Use only when intentional." },
         port: { type: "integer", minimum: 1024, maximum: 65535, description: "CDP port for launch_cdp. Default chooses 9222 if free, otherwise the next free local port." },
         profileName: { type: "string", description: "Name for a plugin-managed persistent profile under .browser-navigator/profiles. Default default." },
@@ -269,7 +269,7 @@ const tools = [
         endpointURL: { type: "string", description: "CDP endpoint URL, usually http://127.0.0.1:9222. Default http://127.0.0.1:9222." },
         allowRemoteEndpoint: { type: "boolean", description: "Allow non-localhost CDP endpoint. Default false." },
         url: { type: "string", description: "Optional URL to open after connecting/loading profile/storage." },
-        visible: { type: "boolean", description: "For use_profile/load_storage browser launch. Default true." },
+        visible: { type: "boolean", description: "For use_profile/load_storage/launch_cdp browser launch. Default true." },
         startupTimeoutMs: { type: "integer", minimum: 1000, maximum: 60000, description: "How long launch_cdp waits for the debug endpoint. Default 15000." },
         width: { type: "integer", minimum: 320, maximum: 3840 },
         height: { type: "integer", minimum: 240, maximum: 2160 },
@@ -1486,13 +1486,67 @@ async function browserSession(args = {}) {
     const { chromium } = loadPlaywright();
     state.visible = visible;
     state.viewport = { width, height };
-    state.context = await chromium.launchPersistentContext(userDataDir, {
+
+    const baseOptions = {
       headless: !visible,
       viewport: state.viewport,
       ignoreHTTPSErrors: true,
       acceptDownloads: true,
       args: ["--disable-dev-shm-usage", "--disable-popup-blocking"]
-    });
+    };
+
+    let resolvedBrowserPath = null;
+    const browserResolutionErrors = [];
+    try {
+      resolvedBrowserPath = resolveBrowserExecutable(args);
+    } catch (error) {
+      if (args.browserPath || (args.browser && String(args.browser).toLowerCase() !== "auto")) {
+        browserResolutionErrors.push(error.message);
+      }
+    }
+
+    const explicitBrowserChoice = Boolean(args.browserPath || (args.browser && String(args.browser).toLowerCase() !== "auto"));
+    const systemAttempt = resolvedBrowserPath ? {
+      label: browserNameFromPath(resolvedBrowserPath),
+      fn: () => chromium.launchPersistentContext(userDataDir, {
+        ...baseOptions,
+        executablePath: resolvedBrowserPath
+      })
+    } : null;
+    const bundledAttempt = {
+      label: "bundled Chromium",
+      fn: () => chromium.launchPersistentContext(userDataDir, { ...baseOptions })
+    };
+    const attempts = explicitBrowserChoice
+      ? [systemAttempt, bundledAttempt].filter(Boolean)
+      : [bundledAttempt, systemAttempt].filter(Boolean);
+
+    const errors = [];
+    for (const attempt of attempts) {
+      try {
+        state.context = await attempt.fn();
+        break;
+      } catch (error) {
+        errors.push(`${attempt.label}: ${error.message}`);
+      }
+    }
+
+    if (!state.context) {
+      throw new Error(
+        [
+          "Could not launch a persistent profile browser. Tried:",
+          ...browserResolutionErrors.map((message) => `  - browser resolution: ${message}`),
+          ...errors.map((message) => `  - ${message}`),
+          "",
+          "Fixes:",
+          "  - Set BROWSER_NAVIGATOR_BROWSER_PATH to a Chrome/Edge executable.",
+          '  - Pass browserPath: "C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe" with the correct path.',
+          '  - Pass browser: "edge" or browser: "chrome" to auto-detect that browser.',
+          "  - Use launch_cdp instead of use_profile for an isolated CDP-based profile."
+        ].join("\n")
+      );
+    }
+
     state.browser = state.context.browser();
     state.browserKind = "persistent";
     state.profileDir = userDataDir;
@@ -3215,6 +3269,19 @@ async function selfTest() {
     const popup = await browserClick({ selector: "#open-popup", newPageTimeoutMs: 3000 });
     const popupState = await browserEvaluate({ script: "document.body.innerText" });
     const pages = await browserPages();
+    const profileCandidates = browserExecutableCandidates("auto");
+    let profileFallback = "skipped: no Chrome/Edge executable found";
+    let profileStatus = "skipped";
+    if (profileCandidates.length) {
+      profileFallback = await browserSession({
+        action: "use_profile",
+        browserPath: profileCandidates[0],
+        visible: false,
+        profileName: "self-test-profile",
+        url: `http://127.0.0.1:${serverPort}/`
+      });
+      profileStatus = await browserSession({ action: "status" });
+    }
     const cdpCandidates = browserExecutableCandidates("auto");
     let cdpLaunch = "skipped: no Chrome/Edge executable found";
     let cdpStatus = "skipped";
@@ -3262,6 +3329,8 @@ async function selfTest() {
       consoleRead: consoleReport.includes("next step clicked") && consoleReport.includes("self test console error"),
       popupSwitched: popup.includes("Popup content ready") || popupState.includes("Popup content ready"),
       pagesListed: pages.includes("[p1]") && pages.includes("[p2]"),
+      profileFallback: profileCandidates.length ? profileFallback.includes("Using persistent browser profile") && profileStatus.includes("Browser session: persistent") : true,
+      profileFallbackDetail: profileCandidates.length ? "tested" : profileFallback,
       cdpLaunch: cdpCandidates.length ? cdpLaunch.includes("CDP") && cdpStatus.includes("Browser session: cdp") : true,
       cdpLaunchDetail: cdpCandidates.length ? "tested" : cdpLaunch
     };

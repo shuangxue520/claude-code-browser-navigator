@@ -1,5 +1,8 @@
 # browser-navigator
 
+![Version](https://img.shields.io/badge/version-1.1.1-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 A Claude Code plugin that drives a real local browser through MCP.
 
 browser-navigator is built for text-first models that need to work with live web pages without loading a whole DOM into context. Instead of dumping raw HTML, it returns compact element refs, structured extractions, and purpose-built actions, so the model can read a page, click, type, watch network traffic, and confirm what changed with minimal token overhead.

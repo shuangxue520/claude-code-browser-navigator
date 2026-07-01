@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- Improved `browser_session` `use_profile` so persistent profiles can fall back from Playwright's bundled Chromium to a detected or explicit system Chrome/Edge executable.
+- Added self-test coverage for the persistent profile browser fallback path.
+
 ## 1.1.0
 
 - Added `browser_session` action `launch_cdp` to start an isolated local Chrome/Edge debugging browser and connect automatically.

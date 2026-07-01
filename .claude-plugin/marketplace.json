@@ -8,8 +8,8 @@
     {
       "name": "browser-navigator",
       "source": "./plugins/browser-navigator",
-      "description": "Drive a real local browser from Claude Code: compact page views, structured extraction, forms, uploads, dialogs and downloads, tabs, reusable sessions and profiles, managed CDP launch/connect, in-page JavaScript, fetch/XHR and console capture, screenshots, and page-level security snapshots.",
-      "version": "1.1.0"
+      "description": "Drive a real local browser from Claude Code: compact page views, structured extraction, forms, uploads, dialogs and downloads, tabs, session management, reusable profiles/storage state, managed CDP launch/connect, in-page JavaScript, fetch/XHR and console capture, screenshots, and page-level security snapshots.",
+      "version": "1.1.1"
     }
   ]
 }
