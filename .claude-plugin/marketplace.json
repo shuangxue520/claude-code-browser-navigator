@@ -1,0 +1,15 @@
+{
+  "name": "browser-navigator-marketplace",
+  "description": "Claude Code marketplace for browser-navigator, a local browser MCP built for text-first models.",
+  "owner": {
+    "name": "browser-navigator contributors"
+  },
+  "plugins": [
+    {
+      "name": "browser-navigator",
+      "source": "./plugins/browser-navigator",
+      "description": "Drive a real local browser from Claude Code: compact page views, structured extraction, forms, uploads, dialogs and downloads, tabs, reusable sessions and profiles, managed CDP launch/connect, in-page JavaScript, fetch/XHR and console capture, screenshots, and page-level security snapshots.",
+      "version": "1.1.0"
+    }
+  ]
+}

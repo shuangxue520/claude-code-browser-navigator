@@ -1,0 +1,28 @@
+# Runtime output
+.browser-navigator/
+**/.browser-navigator/
+downloads/
+profiles/
+storage/
+cdp-profiles/
+screenshots/
+*.har
+
+# Dependencies and caches
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Secrets and local configuration
+.env
+.env.*
+*.local.json
+settings.local.json
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

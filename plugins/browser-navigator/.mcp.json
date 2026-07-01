@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "browser_navigator": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server.js"],
+      "env": {
+        "BROWSER_NAVIGATOR_ROOT": "${CLAUDE_PROJECT_DIR}",
+        "BROWSER_NAVIGATOR_JSONL": "1"
+      },
+      "alwaysLoad": true
+    }
+  }
+}
