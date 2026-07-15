@@ -10,7 +10,7 @@ const { spawn } = require("child_process");
 const { pathToFileURL } = require("url");
 
 const SERVER_NAME = "browser_navigator";
-const SERVER_VERSION = "1.1.2";
+const SERVER_VERSION = "1.2.0";
 const ROOT = path.resolve(process.env.BROWSER_NAVIGATOR_ROOT || process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const REF_ATTR = "data-claude-browser-ref";
 const pageRefs = new WeakMap();
@@ -1399,6 +1399,13 @@ async function browserOpen(args = {}) {
   setCurrentPage(page);
   const url = normalizeUrl(args.url);
   const waitUntil = args.waitUntil || "domcontentloaded";
+
+  let oldOrigin = "";
+  let newOrigin = "";
+  try { oldOrigin = new URL(page.url()).origin; } catch { /* Ignore URLs without an origin. */ }
+  try { newOrigin = new URL(url).origin; } catch { /* Ignore URLs without an origin. */ }
+  if (oldOrigin && newOrigin && oldOrigin !== newOrigin) resetLogs();
+
   await page.goto(url, { waitUntil, timeout: 45000 });
   return pageView({});
 }
@@ -2205,7 +2212,13 @@ async function browserSwitchPage(args = {}) {
 
 async function locatorFromArgs(page, args = {}, forInput = false) {
   if (args.ref) {
-    return page.locator(`[${REF_ATTR}="${String(args.ref)}"]`).first();
+    const ref = String(args.ref);
+    if (!/^[a-zA-Z0-9._-]+$/.test(ref)) throw new Error(`Invalid browser ref: ${ref}`);
+    const locator = page.locator(`[${REF_ATTR}="${ref}"]`);
+    if (await locator.count() === 0) {
+      throw new Error(`DOM changed since browser_view: ref ${ref} no longer exists. Run browser_view again and retry with a fresh ref.`);
+    }
+    return locator.first();
   }
   if (args.selector) {
     return page.locator(args.selector).first();
@@ -2349,7 +2362,16 @@ async function browserHover(args = {}) {
   const page = requirePage();
   if (!args.ref && !args.selector) await pageView({ maxElements: 300 });
   const locator = await locatorFromArgs(page, args, false);
-  await locator.hover({ timeout: 15000 });
+  try {
+    await locator.hover({ timeout: 5000 });
+  } catch (firstError) {
+    const message = firstError.message || "";
+    const blocked = /not (visible|stable)|covered|intercept(?:ed|s|ing)|outside of the viewport/i.test(message);
+    if (!blocked) throw firstError;
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(400);
+    await locator.hover({ timeout: 10000 });
+  }
   if (args.waitMs) await page.waitForTimeout(intArg(args.waitMs, 500, 0, 10000));
   else await page.waitForTimeout(500);
   return pageView({});
@@ -3268,7 +3290,19 @@ async function selfTest() {
     const uploadFile = path.join(ROOT, ".browser-navigator", "upload-self-test.txt");
     fs.mkdirSync(path.dirname(uploadFile), { recursive: true });
     fs.writeFileSync(uploadFile, "upload ok", "utf8");
-    const view = await browserOpen({ url: `http://127.0.0.1:${serverPort}/`, visible: false });
+    const testUrl = `http://127.0.0.1:${serverPort}/`;
+    const view = await browserOpen({ url: testUrl, visible: false });
+    await browserEvaluate({ script: "console.error('old-origin-self-test')" });
+    await requirePage().waitForTimeout(100);
+    await browserOpen({ url: "data:text/html,<title>New Origin</title><p>origin reset</p>", visible: false });
+    const clearedConsole = await browserConsole({ levels: ["error"], maxEntries: 5 });
+    await browserOpen({ url: testUrl, visible: false });
+    let staleRefMessage = "";
+    try {
+      await browserClick({ ref: "e999999" });
+    } catch (error) {
+      staleRefMessage = error.message || "";
+    }
     await browserEvaluate({ script: "localStorage.setItem('browserNavigatorStorageSelfTest', 'ok')" });
     const savedSession = await browserSession({ action: "save_storage", name: "self-test" });
     const loadedSession = await browserSession({ action: "load_storage", name: "self-test", visible: false, url: `http://127.0.0.1:${serverPort}/` });
@@ -3339,6 +3373,8 @@ async function selfTest() {
       root: ROOT,
       tools: tools.map((tool) => tool.name),
       opened: view.includes("Navigator test page"),
+      crossOriginLogsCleared: clearedConsole.includes("(none)"),
+      staleRefRejected: staleRefMessage.includes("Run browser_view again"),
       sessionSaved: savedSession.includes("Saved browser storage state"),
       sessionLoaded: loadedSession.includes("Loaded browser storage state") && loadedStorage.includes("ok"),
       sessionStatus: sessionStatus.includes("Browser session:"),

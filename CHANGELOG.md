@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- Cleared origin-specific console and fetch/XHR logs when `browser_open` navigates to a different origin.
+- Added fast stale-ref detection across ref-based actions, with a direct instruction to refresh `browser_view` and retry.
+- Retried a blocked hover once after dismissing common overlays with Escape.
+
 ## 1.1.2
 
 - Cleaned the fixed self-test upload, screenshot, download, storage state, persistent profile, and CDP profile paths after each test run.

@@ -1,6 +1,6 @@
 # browser-navigator
 
-![Version](https://img.shields.io/badge/version-1.1.2-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A Claude Code plugin that drives a real local browser through MCP.
