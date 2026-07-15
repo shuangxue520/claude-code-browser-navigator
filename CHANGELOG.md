@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- Cleaned the fixed self-test upload, screenshot, download, storage state, persistent profile, and CDP profile paths after each test run.
+- Added guarded retry cleanup for browser profile files that Windows may release shortly after Chrome or Edge exits.
+
 ## 1.1.1
 
 - Improved `browser_session` `use_profile` so persistent profiles can fall back from Playwright's bundled Chromium to a detected or explicit system Chrome/Edge executable.

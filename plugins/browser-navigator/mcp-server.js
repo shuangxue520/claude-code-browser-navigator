@@ -10,7 +10,7 @@ const { spawn } = require("child_process");
 const { pathToFileURL } = require("url");
 
 const SERVER_NAME = "browser_navigator";
-const SERVER_VERSION = "1.1.1";
+const SERVER_VERSION = "1.1.2";
 const ROOT = path.resolve(process.env.BROWSER_NAVIGATOR_ROOT || process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const REF_ATTR = "data-claude-browser-ref";
 const pageRefs = new WeakMap();
@@ -634,6 +634,43 @@ function cdpBaseUrlFromPort(port) {
 function resolveCdpProfileDir(args = {}) {
   if (args.userDataDir) return resolveProfileDir(args);
   return pluginDataPath("cdp-profiles", safeFileName(args.profileName || "cdp", "cdp"));
+}
+
+function selfTestArtifactPaths() {
+  return [
+    pluginDataPath("upload-self-test.txt"),
+    pluginDataPath("storage", "self-test.json"),
+    pluginDataPath("screenshots", "element-self-test.png"),
+    pluginDataPath("downloads", "self-test-download.txt"),
+    pluginDataPath("profiles", "self-test-profile"),
+    pluginDataPath("cdp-profiles", "self-test-cdp")
+  ];
+}
+
+async function removeSelfTestArtifacts() {
+  const dataRoot = pluginDataPath();
+  for (const target of selfTestArtifactPaths()) {
+    const relative = path.relative(dataRoot, target);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(`Refusing to clean self-test path outside plugin data root: ${target}`);
+    }
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        fs.rmSync(target, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 });
+      } catch (error) {
+        if (attempt === 19) throw error;
+      }
+      if (!fs.existsSync(target)) break;
+      if (attempt === 19) throw new Error(`Could not remove browser self-test artifact: ${target}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  for (const name of ["storage", "screenshots", "downloads", "profiles", "cdp-profiles"]) {
+    const dir = pluginDataPath(name);
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+  }
+  if (fs.existsSync(dataRoot) && fs.readdirSync(dataRoot).length === 0) fs.rmdirSync(dataRoot);
 }
 
 function uniqueExistingPaths(paths) {
@@ -3166,6 +3203,7 @@ function createStdioParser(onMessage) {
 
 async function selfTest() {
   let testServer = null;
+  await removeSelfTestArtifacts();
   const serverPort = await new Promise((resolve, reject) => {
     testServer = http.createServer((request, response) => {
       if (request.url && request.url.startsWith("/api/self-test")) {
@@ -3339,6 +3377,7 @@ async function selfTest() {
     if (testServer) {
       await new Promise((resolve) => testServer.close(resolve));
     }
+    await removeSelfTestArtifacts();
   }
 }
 
